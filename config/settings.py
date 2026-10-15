@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    'converter',
 ]
 
 MIDDLEWARE = [
@@ -132,3 +133,7 @@ MAILERS = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200"
 ]
+
+# Conversión de audio
+# Límite máximo del archivo de audio que se acepta subir.
+MAX_AUDIO_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
