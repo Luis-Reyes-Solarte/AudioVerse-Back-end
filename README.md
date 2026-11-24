@@ -1,7 +1,6 @@
 # AudioVerse — Back-end API
 
-> \[!IMPORTANT\]
-> **Repositorio del Front-end:** Esta es la API REST del proyecto. Para ejecutar la interfaz gráfica completa creada en Angular 22, visita el repositorio del front-end aquí: [**🔗 Enlace al repositorio del Front-end**](https://github.com/tu-usuario/audioverse-frontend) *(reemplaza esta URL con tu enlace real)*.
+> \[!IMPORTANT\] > **Repositorio del Front-end:** Esta es la API REST del proyecto. Para ejecutar la interfaz gráfica completa creada en Angular 22, visita el repositorio del front-end aquí: [**🔗 Enlace al repositorio del Front-end**](https://github.com/Luis-Reyes-Solarte/AudioVerse-Front-end.git) _(reemplaza esta URL con tu enlace real)_.
 
 ## De qué trata
 
@@ -13,25 +12,25 @@
 
 ## Tecnologías usadas
 
-* **Python** 3.11+
+-   **Python** 3.11+
 
-* **Django** & **Django REST Framework (DRF)**
+-   **Django** & **Django REST Framework (DRF)**
 
-* **imageio-ffmpeg** (binario integrado de `ffmpeg`, sin necesidad de instalación global en el sistema operativo)
+-   **imageio-ffmpeg** (binario integrado de `ffmpeg`, sin necesidad de instalación global en el sistema operativo)
 
-* **mutagen** (lectura de duración, bitrate, sample rate y canales)
+-   **mutagen** (lectura de duración, bitrate, sample rate y canales)
 
-* **google-genai** & **Pydantic** (transcripción con salidas estructuradas en JSON Schema)
+-   **google-genai** & **Pydantic** (transcripción con salidas estructuradas en JSON Schema)
 
-* **python-dotenv** (gestión de variables de entorno)
+-   **python-dotenv** (gestión de variables de entorno)
 
 ## Requisitos previos
 
-* Python `3.11` o superior.
+-   Python `3.11` o superior.
 
-* `pip` y `venv` instalados.
+-   `pip` y `venv` instalados.
 
-* Una clave de API válida de **Google AI Studio (Gemini API)**.
+-   Una clave de API válida de **Google AI Studio (Gemini API)**.
 
 ## Instalación y Configuración
 
@@ -85,11 +84,11 @@ La API quedará disponible por defecto en `http://127.0.0.1:8000/`.
 
 ## Endpoints de la API
 
-| Método | Ruta | Descripción | 
-| ----- | ----- | ----- | 
-| `GET` | `/api/audio/formats/` | Devuelve la lista de formatos de salida soportados (`value`, `label`, `mime`, `lossy`). | 
-| `POST` | `/api/audio/convert/` | Recibe `file`, `format` (y opcionalmente `bitrate` y `filename`) vía `multipart/form-data`. Devuelve metadatos de `original` y `converted` junto con el `data_uri` en Base64. | 
-| `POST` | `/api/audio/transcribe/` | Recibe `file` vía `multipart/form-data`, optimiza el peso si supera los 18 MB y devuelve la transcripción estructurada en bloques con marcas de tiempo. | 
+| Método | Ruta                     | Descripción                                                                                                                                                                   |
+| ------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/audio/formats/`    | Devuelve la lista de formatos de salida soportados (`value`, `label`, `mime`, `lossy`).                                                                                       |
+| `POST` | `/api/audio/convert/`    | Recibe `file`, `format` (y opcionalmente `bitrate` y `filename`) vía `multipart/form-data`. Devuelve metadatos de `original` y `converted` junto con el `data_uri` en Base64. |
+| `POST` | `/api/audio/transcribe/` | Recibe `file` vía `multipart/form-data`, optimiza el peso si supera los 18 MB y devuelve la transcripción estructurada en bloques con marcas de tiempo.                       |
 
 ## Arquitectura del Módulo Principal
 
