@@ -18,6 +18,8 @@ from django.conf import settings
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
+import time
+from google.genai import errors as genai_errors
 
 
 # Añadir al final de services.py:
@@ -45,18 +47,23 @@ def _format_duration(seconds):
         return f'{hours:02d}:{mins:02d}:{secs:02d}'
     return f'{mins:02d}:{secs:02d}'
 
-
 def transcribe_audio_with_gemini(uploaded_file):
-    """Transcribe un archivo de audio usando Gemini API y devuelve metadatos + segmentos."""
+    """Transcribe un archivo de audio usando Gemini API con reintentos y modelos de respaldo."""
     api_key = getattr(settings, 'GEMINI_API_KEY', '')
     if not api_key:
         raise ConversionError('Falta configurar GEMINI_API_KEY en el archivo .env del servidor.')
 
-    model_name = getattr(settings, 'GEMINI_TRANSCRIPTION_MODEL', 'gemini-2.5-flash')
+    primary_model = getattr(settings, 'GEMINI_TRANSCRIPTION_MODEL', 'gemini-2.5-flash')
+    # Orden de modelos a intentar si el principal está saturado (503 / 429)
+    candidate_models = list(dict.fromkeys([
+        primary_model,
+        'gemini-2.5-flash-lite',
+        'gemini-2.0-flash',
+    ]))
+
     _, src_ext = os.path.splitext(uploaded_file.name or '')
     src_ext = src_ext.lower() or '.mp3'
 
-    # Leemos metadatos originales con mutagen
     with tempfile.TemporaryDirectory(prefix='audioverse-meta-') as tmp_dir:
         tmp_path = os.path.join(tmp_dir, f'source{src_ext}')
         with open(tmp_path, 'wb') as f:
@@ -66,7 +73,6 @@ def transcribe_audio_with_gemini(uploaded_file):
 
     uploaded_file.seek(0)
 
-    # Si supera 18 MB (ej. WAV sin comprimir), optimizamos a MP3 64k antes de enviarlo
     if uploaded_file.size > 18 * 1024 * 1024:
         compressed = convert_audio(uploaded_file, output_format='mp3', bitrate='64k')
         audio_bytes = compressed['data']
@@ -85,24 +91,43 @@ def transcribe_audio_with_gemini(uploaded_file):
         'en el que se habla, puntuación natural y división en párrafos coherentes con marcas de tiempo (MM:SS).'
     )
 
-    try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=[
-                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                prompt,
-            ],
-            config=types.GenerateContentConfig(
-                response_mime_type='application/json',
-                response_schema=TranscriptOutputSchema,
-                temperature=0.1,
-            ),
-        )
-    except Exception as exc:
-        raise ConversionError(f'Error al comunicarse con Gemini API: {exc}')
+    response = None
+    last_error = None
 
-    if not response.text:
-        raise ConversionError('Gemini no devolvió contenido para este audio.')
+    for model_name in candidate_models:
+        for attempt in range(2):  # Hasta 2 intentos por modelo antes de saltar al siguiente
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[
+                        types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                        prompt,
+                    ],
+                    config=types.GenerateContentConfig(
+                        response_mime_type='application/json',
+                        response_schema=TranscriptOutputSchema,
+                        temperature=0.1,
+                    ),
+                )
+                break
+            except genai_errors.APIError as exc:
+                last_error = exc
+                # 503 (alta demanda) o 429 (límite de cuota temporal): esperamos y reintentamos
+                if exc.code in (429, 503):
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                raise ConversionError(f'Error de Gemini API ({exc.code}): {exc.message}')
+            except Exception as exc:
+                last_error = exc
+                raise ConversionError(f'Error inesperado al transcribir con IA: {exc}')
+
+        if response and response.text:
+            break
+
+    if not response or not response.text:
+        raise ConversionError(
+            'Los servidores de IA tienen alta demanda en este momento. Por favor, inténtalo de nuevo en unos segundos.'
+        )
 
     parsed = TranscriptOutputSchema.model_validate_json(response.text)
 
@@ -117,7 +142,6 @@ def transcribe_audio_with_gemini(uploaded_file):
         },
         'transcript': parsed.model_dump(),
     }
-
 #: Bitrate por defecto cuando el usuario no envía uno y el formato tiene pérdida.
 DEFAULT_BITRATE = '192k'
 
