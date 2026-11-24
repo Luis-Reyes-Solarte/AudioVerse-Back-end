@@ -57,8 +57,8 @@ def transcribe_audio_with_gemini(uploaded_file):
     # Orden de modelos a intentar si el principal está saturado (503 / 429)
     candidate_models = list(dict.fromkeys([
         primary_model,
-        'gemini-2.5-flash-lite',
-        'gemini-2.0-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.5-flash',
     ]))
 
     _, src_ext = os.path.splitext(uploaded_file.name or '')
