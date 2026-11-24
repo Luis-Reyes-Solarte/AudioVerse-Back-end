@@ -8,14 +8,35 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .serializers import AudioConversionRequestSerializer
+# Añadir en views.py:
+from .serializers import (
+    AudioConversionRequestSerializer,
+    AudioTranscriptionRequestSerializer,
+)
 from .services import (
     SUPPORTED_FORMATS,
     ConversionError,
     convert_audio,
     human_size,
     supported_formats,
+    transcribe_audio_with_gemini,
 )
+
+
+class AudioTranscribeView(APIView):
+    """Transcribe un audio a texto estructurado usando Gemini API."""
+
+    def post(self, request):
+        serializer = AudioTranscriptionRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        input_file = serializer.validated_data['file']
+
+        try:
+            result = transcribe_audio_with_gemini(input_file)
+        except ConversionError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class AudioFormatListView(APIView):
@@ -79,3 +100,5 @@ class AudioConvertView(APIView):
                 **result['converted'],
             },
         })
+
+

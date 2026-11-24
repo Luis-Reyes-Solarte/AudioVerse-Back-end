@@ -12,6 +12,112 @@ import tempfile
 import imageio_ffmpeg
 from mutagen import File as MutagenFile
 
+# Añadir al inicio de services.py:
+import mimetypes
+from django.conf import settings
+from google import genai
+from google.genai import types
+from pydantic import BaseModel, Field
+
+
+# Añadir al final de services.py:
+class TranscriptSegmentSchema(BaseModel):
+    timestamp: str = Field(description='Marca de tiempo de inicio en formato MM:SS, por ejemplo "00:00" o "01:36".')
+    text: str = Field(description='Párrafo transcrito correspondiente a este bloque de tiempo.')
+
+
+class TranscriptOutputSchema(BaseModel):
+    language: str = Field(description='Idioma principal detectado en inglés, por ejemplo "English" o "Spanish".')
+    speakers_count: int = Field(description='Número estimado de hablantes distintos en el audio.')
+    segments: list[TranscriptSegmentSchema] = Field(
+        description='Lista cronológica de párrafos con marca de tiempo cada ~30-50 segundos o cambio de idea.'
+    )
+    full_text: str = Field(description='Transcripción completa limpia y bien puntuada en párrafos.')
+
+
+def _format_duration(seconds):
+    if not seconds or seconds <= 0:
+        return None
+    total = int(round(seconds))
+    mins, secs = divmod(total, 60)
+    hours, mins = divmod(mins, 60)
+    if hours > 0:
+        return f'{hours:02d}:{mins:02d}:{secs:02d}'
+    return f'{mins:02d}:{secs:02d}'
+
+
+def transcribe_audio_with_gemini(uploaded_file):
+    """Transcribe un archivo de audio usando Gemini API y devuelve metadatos + segmentos."""
+    api_key = getattr(settings, 'GEMINI_API_KEY', '')
+    if not api_key:
+        raise ConversionError('Falta configurar GEMINI_API_KEY en el archivo .env del servidor.')
+
+    model_name = getattr(settings, 'GEMINI_TRANSCRIPTION_MODEL', 'gemini-2.5-flash')
+    _, src_ext = os.path.splitext(uploaded_file.name or '')
+    src_ext = src_ext.lower() or '.mp3'
+
+    # Leemos metadatos originales con mutagen
+    with tempfile.TemporaryDirectory(prefix='audioverse-meta-') as tmp_dir:
+        tmp_path = os.path.join(tmp_dir, f'source{src_ext}')
+        with open(tmp_path, 'wb') as f:
+            for chunk in uploaded_file.chunks():
+                f.write(chunk)
+        original_info = _read_audio_info(tmp_path)
+
+    uploaded_file.seek(0)
+
+    # Si supera 18 MB (ej. WAV sin comprimir), optimizamos a MP3 64k antes de enviarlo
+    if uploaded_file.size > 18 * 1024 * 1024:
+        compressed = convert_audio(uploaded_file, output_format='mp3', bitrate='64k')
+        audio_bytes = compressed['data']
+        mime_type = 'audio/mpeg'
+    else:
+        audio_bytes = uploaded_file.read()
+        guessed_mime, _ = mimetypes.guess_type(uploaded_file.name or '')
+        mime_type = uploaded_file.content_type or guessed_mime or 'audio/mpeg'
+        if mime_type == 'application/octet-stream':
+            mime_type = 'audio/mpeg'
+
+    client = genai.Client(api_key=api_key)
+
+    prompt = (
+        'Transcribe el siguiente archivo de audio con alta precisión, manteniendo el idioma original '
+        'en el que se habla, puntuación natural y división en párrafos coherentes con marcas de tiempo (MM:SS).'
+    )
+
+    try:
+        response = client.models.generate_content(
+            model=model_name,
+            contents=[
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                prompt,
+            ],
+            config=types.GenerateContentConfig(
+                response_mime_type='application/json',
+                response_schema=TranscriptOutputSchema,
+                temperature=0.1,
+            ),
+        )
+    except Exception as exc:
+        raise ConversionError(f'Error al comunicarse con Gemini API: {exc}')
+
+    if not response.text:
+        raise ConversionError('Gemini no devolvió contenido para este audio.')
+
+    parsed = TranscriptOutputSchema.model_validate_json(response.text)
+
+    return {
+        'original': {
+            'name': uploaded_file.name,
+            'size': uploaded_file.size,
+            'size_human': human_size(uploaded_file.size),
+            'format': src_ext.lstrip('.').lower() or None,
+            'duration_formatted': _format_duration(original_info.get('duration')),
+            **original_info,
+        },
+        'transcript': parsed.model_dump(),
+    }
+
 #: Bitrate por defecto cuando el usuario no envía uno y el formato tiene pérdida.
 DEFAULT_BITRATE = '192k'
 
